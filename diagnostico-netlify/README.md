@@ -10,24 +10,25 @@ netlify/functions/diagnostico.js  → llama a la API de Claude (server-side, con
 netlify/functions/registro.js     → guarda/lee los diagnósticos del equipo (Netlify Blobs)
 ```
 
-## Pasos para desplegar
+## Variables de entorno (Netlify → Project configuration → Environment variables)
 
-1. **Crear un repo nuevo en GitHub** (ej. `jcotrainer-diagnostico-coach-premium`), separado del repo de la matriz.
-2. Arrastra **la carpeta completa** de este proyecto al repo (para conservar la subcarpeta `netlify/functions`).
-3. En Netlify: **Add new site → Import an existing project** → conecta ese repo nuevo.
-   - Build command: dejar vacío (no hace falta build).
-   - Publish directory: `public`
-   - Functions directory: se detecta sola por `netlify.toml` (`netlify/functions`).
-4. En **Site settings → Environment variables**, agrega:
-   - `ANTHROPIC_API_KEY` = tu API key de console.anthropic.com
-5. Deploy. Netlify instala `@netlify/blobs` automáticamente porque está en `package.json`.
+- `ANTHROPIC_API_KEY` = tu API key de console.anthropic.com
+- `COACH_PIN` = la clave del panel coach. Mínimo 8 caracteres. **No se escribe en ningún archivo del repo.**
+
+Si cambias cualquiera de las dos, haz un deploy nuevo para que tome efecto.
 
 ## Panel coach
 
-Mismo gesto que en el artifact: 5 toques en el wordmark del pie de página (pantalla de inicio) → PIN `2580`.
-El botón de exportar ahora **descarga un CSV directo** (ya no depende del chat de Claude) — ábrelo con Google Sheets o súbelo a Drive manualmente.
+5 toques en el wordmark del pie de página (pantalla de inicio) → ingresar la clave.
+La clave la valida el servidor contra `COACH_PIN`. Después de 5 intentos fallidos desde la misma conexión, se bloquea 15 minutos.
+El botón de exportar descarga un CSV directo — ábrelo con Google Sheets o súbelo a Drive manualmente.
 
-## Notas
+## Almacenamiento (Netlify Blobs)
 
-- El registro de diagnósticos vive en Netlify Blobs (`diagnosticos-registro`), aislado de cualquier otro sitio.
-- Si más adelante quieres que el CSV se suba solo a Google Drive (sin paso manual), hay que agregar una función más con credenciales de Google (OAuth o cuenta de servicio) — avísame cuando quieras montarlo.
+- Store `diagnosticos`: cada diagnóstico se guarda como su propia entrada (`d/<id>`). La entrada antigua `registro` (lista de antes del cambio) se sigue leyendo para no perder diagnósticos previos.
+- Store `limites`: contadores de uso por IP (diagnósticos por hora, guardados por hora e intentos fallidos de clave).
+
+## Límites
+
+- 30 diagnósticos por hora por conexión (generoso a propósito: en un taller en vivo todos comparten el wifi).
+- Recomendado: fijar además un límite de gasto mensual en console.anthropic.com como respaldo.
