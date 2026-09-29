@@ -112,7 +112,7 @@
   .input-field:focus{border-color:var(--blue);}
   .input-field::placeholder{color:#666;}
 
-  .pin-input{width:100%; background:var(--panel); border:1px solid #262626; color:var(--white); font-family:'Lato',sans-serif; font-weight:900; font-size:28px; letter-spacing:0.5em; text-align:center; padding:18px 16px 18px 22px; border-radius:2px; margin-bottom:16px; outline:none;}
+  .pin-input{width:100%; background:var(--panel); border:1px solid #262626; color:var(--white); font-family:'Lato',sans-serif; font-weight:900; font-size:20px; letter-spacing:0.2em; text-align:center; padding:18px 16px 18px 22px; border-radius:2px; margin-bottom:16px; outline:none;}
   .pin-input:focus{border-color:var(--blue);}
   .pin-input.pin-error{border-color:#ff4d4d;}
   .pin-error-text{color:#ff9a9a; font-size:12.5px; text-align:center; margin-bottom:22px; font-weight:700;}
@@ -244,7 +244,13 @@ const MODULOS = [
   "Plan de acción"
 ];
 
-const COACH_PIN = "2580";
+// La clave del panel ya no vive aquí: la valida el servidor contra la
+// variable de entorno COACH_PIN de Netlify.
+function escapeHtml(val){
+  return String(val==null?'':val)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
 
 let state = { screen:'welcome', current:0, answers:new Array(QUESTIONS.length).fill(null), result:null, error:null, userName:'', coachData:null, coachLoading:false, pinError:false, exportSent:false };
 let tapCount = 0;
@@ -277,7 +283,7 @@ function renderWelcome(){
         <div class="meta-item"><b>~2 min</b>Duración</div>
         <div class="meta-item"><b>4</b>Pilares evaluados</div>
       </div>
-      <input type="text" class="input-field" id="name-input" placeholder="Tu nombre (para tu diagnóstico)" maxlength="40" value="${state.userName||''}">
+      <input type="text" class="input-field" id="name-input" placeholder="Tu nombre (para tu diagnóstico)" maxlength="40" value="${escapeHtml(state.userName||'')}">
       <button class="btn-primary" id="start-btn">Comenzar diagnóstico</button>
     </div>
     <footer class="foot"><div id="secret-tap">${wordmark()}</div></footer>
@@ -324,7 +330,7 @@ function renderResult(){
     return `
       <header class="top">${wordmark()}</header>
       <div class="screen" style="justify-content:center;">
-        <div class="error-box"><p>No se pudo generar el diagnóstico. ${state.error}</p></div>
+        <div class="error-box"><p>No se pudo generar el diagnóstico. ${escapeHtml(state.error)}</p></div>
         <button class="btn-primary" id="retry-btn">Reintentar</button>
       </div>
     `;
@@ -335,7 +341,7 @@ function renderResult(){
   return `
     <header class="top">${wordmark()}</header>
     <div class="screen">
-      <div class="badge">Nivel: ${r.nivel}</div>
+      <div class="badge">Nivel: ${escapeHtml(r.nivel)}</div>
       <div class="score-row"><div class="score-num">${s.global}</div><div class="score-max">/ 100</div></div>
       <div class="score-label">Puntaje global hacia el modelo Coach Premium</div>
 
@@ -349,21 +355,21 @@ function renderResult(){
       </div>
 
       <div class="section-label">Diagnóstico</div>
-      <div class="diagnostico-text">${r.diagnostico}</div>
+      <div class="diagnostico-text">${escapeHtml(r.diagnostico)}</div>
 
       <div class="section-label">Tu brecha hacia Coach Premium</div>
-      <div class="brecha-box"><p>${r.brecha}</p></div>
+      <div class="brecha-box"><p>${escapeHtml(r.brecha)}</p></div>
 
       <div class="section-label">Empieza por este módulo del taller</div>
       <div class="modulo-card">
         <div class="modulo-eyebrow">Módulo recomendado</div>
-        <div class="modulo-name">${r.modulo_recomendado}</div>
-        <div class="modulo-why">${r.por_que}</div>
+        <div class="modulo-name">${escapeHtml(r.modulo_recomendado)}</div>
+        <div class="modulo-why">${escapeHtml(r.por_que)}</div>
       </div>
 
       <div class="section-label">Tus próximos 3 pasos</div>
       <ul class="steps">
-        ${r.siguientes_pasos.map(p=>`<li><span class="step-text">${p}</span></li>`).join('')}
+        ${r.siguientes_pasos.map(p=>`<li><span class="step-text">${escapeHtml(p)}</span></li>`).join('')}
       </ul>
 
       <button class="btn-secondary" id="restart-btn">Repetir diagnóstico</button>
@@ -377,11 +383,11 @@ function renderPin(){
     <header class="top">${wordmark()}</header>
     <div class="screen" style="justify-content:center;">
       <div class="eyebrow">Panel coach</div>
-      <h1 style="font-size:26px;">Ingresa<br><span class="accent">tu PIN</span></h1>
+      <h1 style="font-size:26px;">Ingresa<br><span class="accent">tu clave</span></h1>
       <p class="sub">Acceso restringido al mentor del equipo.</p>
-      <input type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4"
-        class="pin-input ${state.pinError?'pin-error':''}" id="pin-input" placeholder="••••" autofocus>
-      ${state.pinError?'<div class="pin-error-text">PIN incorrecto. Intenta de nuevo.</div>':''}
+      <input type="password" maxlength="64" autocomplete="current-password"
+        class="pin-input ${state.pinError?'pin-error':''}" id="pin-input" placeholder="Tu clave" autofocus>
+      ${state.pinError?`<div class="pin-error-text">${escapeHtml(state.pinError)}</div>`:''}
       <button class="btn-primary" id="pin-submit" style="margin-bottom:12px;">Entrar</button>
       <button class="btn-secondary" id="pin-cancel">Cancelar</button>
     </div>
@@ -422,7 +428,7 @@ function renderCoach(){
       <div class="pillars">
         ${total===0?'<p class="sub" style="margin-bottom:0;">Sin datos todavía.</p>':Object.keys(nivelCounts).map(n=>`
           <div class="pillar-row">
-            <div class="pillar-top"><span class="pillar-name">${n}</span><span class="pillar-val">${nivelCounts[n]}</span></div>
+            <div class="pillar-top"><span class="pillar-name">${escapeHtml(n)}</span><span class="pillar-val">${nivelCounts[n]}</span></div>
             <div class="pillar-track"><div class="pillar-fill" style="width:${Math.round((nivelCounts[n]/total)*100)}%"></div></div>
           </div>
         `).join('')}
@@ -433,7 +439,7 @@ function renderCoach(){
       <div class="pillars">
         ${Object.keys(bottleneckCounts).sort((a,b)=>bottleneckCounts[b]-bottleneckCounts[a]).map(b=>`
           <div class="pillar-row">
-            <div class="pillar-top"><span class="pillar-name">${b}</span><span class="pillar-val">${bottleneckCounts[b]}</span></div>
+            <div class="pillar-top"><span class="pillar-name">${escapeHtml(b)}</span><span class="pillar-val">${bottleneckCounts[b]}</span></div>
             <div class="pillar-track"><div class="pillar-fill" style="width:${Math.round((bottleneckCounts[b]/total)*100)}%"></div></div>
           </div>
         `).join('')}
@@ -443,8 +449,8 @@ function renderCoach(){
       <ul class="coach-list">
         ${sorted.slice(0,25).map(e=>`
           <li class="coach-entry">
-            <div class="coach-row"><span class="coach-name">${e.nombre}</span><span class="coach-score">${e.global}</span></div>
-            <div class="coach-meta">${e.nivel} · ${new Date(e.fecha).toLocaleDateString('es-ES')} · ${e.bottleneck}</div>
+            <div class="coach-row"><span class="coach-name">${escapeHtml(e.nombre)}</span><span class="coach-score">${Number(e.global)||0}</span></div>
+            <div class="coach-meta">${escapeHtml(e.nivel)} · ${new Date(e.fecha).toLocaleDateString('es-ES')} · ${escapeHtml(e.bottleneck)}</div>
           </li>
         `).join('')}
       </ul>
@@ -539,7 +545,9 @@ function recomendacionPara(global){
 }
 
 function csvEscape(val){
-  const s = String(val==null?'':val);
+  let s = String(val==null?'':val);
+  // Un nombre que empieza con = + - @ lo interpretaría Sheets como fórmula.
+  if(/^[=+\-@]/.test(s)) s = "'" + s;
   if(s.includes(',') || s.includes('"') || s.includes('\n')){
     return '"' + s.replace(/"/g,'""') + '"';
   }
@@ -578,29 +586,32 @@ function exportToDrive(){
   render();
 }
 
-function checkPin(){
+async function checkPin(){
   const pinInput = document.getElementById('pin-input');
   const value = pinInput ? pinInput.value.trim() : '';
-  if(value === COACH_PIN){
-    state.pinError = false;
-    openCoachPanel();
-  } else {
-    state.pinError = true;
+  if(!value){
+    state.pinError = 'Ingresa tu clave.';
     render();
+    return;
   }
-}
-
-async function openCoachPanel(){
-  state.screen='coach';
-  state.coachLoading=true;
-  render();
+  const btn = document.getElementById('pin-submit');
+  if(btn){ btn.disabled = true; btn.textContent = 'Verificando...'; }
   try{
-    const res = await fetch('/api/registro');
-    state.coachData = res.ok ? await res.json() : [];
+    const res = await fetch('/api/registro', { headers: { 'x-coach-pin': value } });
+    if(res.ok){
+      state.pinError = false;
+      state.coachData = await res.json();
+      state.coachLoading = false;
+      state.screen = 'coach';
+      render();
+      return;
+    }
+    if(res.status === 401) state.pinError = 'Clave incorrecta. Intenta de nuevo.';
+    else if(res.status === 429) state.pinError = 'Demasiados intentos. Espera 15 minutos.';
+    else state.pinError = 'El panel no está configurado todavía (falta COACH_PIN en Netlify).';
   }catch(e){
-    state.coachData = [];
+    state.pinError = 'Error de conexión. Intenta de nuevo.';
   }
-  state.coachLoading=false;
   render();
 }
 
@@ -652,6 +663,12 @@ async function runDiagnostico(){
       body: JSON.stringify({ scores, bottleneck })
     });
 
+    if(response.status === 429){
+      state.error = "Se alcanzó el límite de diagnósticos por hora desde esta conexión. Intenta más tarde.";
+      state.screen = 'result';
+      render();
+      return;
+    }
     if(!response.ok){
       throw new Error('Error de conexión con el servicio de análisis.');
     }
