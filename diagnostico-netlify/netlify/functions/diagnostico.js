@@ -37,6 +37,7 @@ const MAX_POR_HORA = 30;
 
 const SYSTEM_PROMPT = `Eres el motor de análisis del "Diagnóstico Coach Premium" de JCOTRAINER, marca de mentoría de negocio para entrenadores personales.
 Tono de marca: directo y concreto, como un consultor que ya recorrió el camino, nunca como un influencer motivacional. Prohibido usar frases genéricas ("¡tú puedes lograrlo!", "el éxito está en ti", "eres increíble") o superlativos vacíos ("el mejor", "la fórmula mágica"). Prefiere cifras, pasos concretos y observaciones accionables sobre promesas abstractas.
+Si te pasan números concretos del negocio (clientes activos, tarifa, ingreso mensual, horas semanales, retención), cita al menos uno de esos números tal cual en el diagnóstico o la brecha — es la prueba de que el análisis es sobre este entrenador y no una plantilla genérica.
 Los 5 módulos del taller "De Entrenador a Coach Premium" son exactamente estos (usa el nombre exacto de uno de ellos en modulo_recomendado): ${MODULOS.map(m => `"${m}"`).join(', ')}.
 Responde ÚNICAMENTE con un objeto JSON válido, sin texto adicional, sin markdown, sin backticks, con esta forma exacta:
 {
@@ -99,7 +100,7 @@ export default async (req, context) => {
     return json(400, { error: 'invalid_body' });
   }
 
-  const { scores, bottleneck } = body || {};
+  const { scores, bottleneck, kpis } = body || {};
   const campos = ['fundamentos', 'marca', 'oferta', 'ventas', 'global'];
   if (
     !scores ||
@@ -110,10 +111,25 @@ export default async (req, context) => {
     return json(400, { error: 'datos_invalidos' });
   }
 
+  // Los KPIs son opcionales acá (si vienen mal formados, el diagnóstico
+  // sigue sin ellos en vez de fallar entero) — la validación estricta que
+  // de verdad importa, porque es la que persiste, vive en registro.js.
+  const camposKpi = ['clientes', 'tarifa', 'ingreso', 'horas', 'retencion'];
+  const kpisValidos = kpis && camposKpi.every((c) => Number.isFinite(kpis[c])) ? kpis : null;
+
   // Se valida antes de llamar a la API: una petición inválida no gasta cupo.
   if (await superaLimite(ipDe(req, context))) {
     return json(429, { error: 'demasiadas_solicitudes' });
   }
+
+  const bloqueKpis = kpisValidos ? `
+
+Números del negocio que declaró:
+- Clientes activos: ${kpisValidos.clientes}
+- Tarifa promedio: $${kpisValidos.tarifa}
+- Ingreso mensual del negocio: $${kpisValidos.ingreso}
+- Horas semanales trabajadas (entrenando + administración): ${kpisValidos.horas}
+- % de clientes nuevos que sigue después de 3 meses: ${kpisValidos.retencion}%` : '';
 
   const userPrompt = `Puntajes (0-100, entre más alto mejor):
 - Fundamentos: ${scores.fundamentos}
@@ -123,7 +139,7 @@ export default async (req, context) => {
 - Global: ${scores.global}
 - Nivel calculado: ${scores.nivel}
 
-Cuello de botella que el entrenador declaró como su principal problema hoy: "${bottleneck}"
+Cuello de botella que el entrenador declaró como su principal problema hoy: "${bottleneck}"${bloqueKpis}
 
 Genera el JSON del diagnóstico personalizado.`;
 

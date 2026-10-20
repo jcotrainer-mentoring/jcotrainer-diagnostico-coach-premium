@@ -111,6 +111,20 @@
   .input-field{width:100%; background:var(--panel); border:1px solid #262626; color:var(--white); font-family:'Lato',sans-serif; font-weight:400; font-size:14.5px; padding:15px 16px; border-radius:2px; margin-bottom:22px; outline:none;}
   .input-field:focus{border-color:var(--blue);}
   .input-field::placeholder{color:#666;}
+  .field-error{color:#ff9a9a; font-size:12px; margin:-14px 0 18px; font-weight:400;}
+  .field-label{color:var(--gray); font-size:11.5px; font-weight:700; letter-spacing:0.06em; text-transform:uppercase; margin-bottom:8px; display:block;}
+
+  /* Progreso (comparación inicio/cierre) */
+  .progreso-box{background:var(--panel-2); border:1px solid #262626; border-radius:2px; padding:20px; margin-bottom:28px;}
+  .progreso-row{display:flex; justify-content:space-between; align-items:baseline; padding:11px 0; border-top:1px solid #1e1e1e;}
+  .progreso-row:first-child{border-top:none; padding-top:0;}
+  .progreso-label{font-size:13px; color:#c7c7c7; font-weight:400;}
+  .progreso-vals{font-size:11px; color:var(--gray); margin-top:2px;}
+  .progreso-delta{font-size:14px; font-weight:900; flex:0 0 auto; text-align:right;}
+  .progreso-delta.up{color:var(--blue);}
+  .progreso-delta.down{color:#ff9a9a;}
+  .progreso-delta.flat{color:var(--gray);}
+  .coach-delta{color:var(--blue); font-weight:900; font-size:14px;}
 
   .pin-input{width:100%; background:var(--panel); border:1px solid #262626; color:var(--white); font-family:'Lato',sans-serif; font-weight:900; font-size:20px; letter-spacing:0.2em; text-align:center; padding:18px 16px 18px 22px; border-radius:2px; margin-bottom:16px; outline:none;}
   .pin-input:focus{border-color:var(--blue);}
@@ -244,6 +258,17 @@ const MODULOS = [
   "Plan de acción"
 ];
 
+// No suman al puntaje por pilar (ese cálculo ya está calibrado y en
+// producción) — son el dato duro aparte, el que permite mostrar "de $X a
+// $Y" cuando el mismo entrenador responde de nuevo al cerrar el taller.
+const KPIS = [
+  { key:'clientes', label:'Clientes activos hoy', placeholder:'Ej: 12', suffix:'', min:0, max:2000 },
+  { key:'tarifa', label:'Tarifa promedio por sesión o mes ($)', placeholder:'Ej: 25000', suffix:'', min:0, max:5000000 },
+  { key:'ingreso', label:'Ingreso mensual de tu negocio ($)', placeholder:'Ej: 800000', suffix:'', min:0, max:100000000 },
+  { key:'horas', label:'Horas semanales trabajadas (entrenando + administración)', placeholder:'Ej: 35', suffix:'', min:0, max:120 },
+  { key:'retencion', label:'% de clientes nuevos que sigue contigo después de 3 meses', placeholder:'Ej: 60', suffix:'%', min:0, max:100 },
+];
+
 // La clave del panel ya no vive aquí: la valida el servidor contra la
 // variable de entorno COACH_PIN de Netlify.
 function escapeHtml(val){
@@ -252,7 +277,12 @@ function escapeHtml(val){
     .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 
-let state = { screen:'welcome', current:0, answers:new Array(QUESTIONS.length).fill(null), result:null, error:null, userName:'', coachData:null, coachLoading:false, pinError:false, exportSent:false };
+function estadoInicial(){
+  return { screen:'welcome', current:0, answers:new Array(QUESTIONS.length).fill(null),
+    kpis:{}, kpiError:false, result:null, error:null, userName:'', email:'', emailError:false,
+    coachData:null, coachLoading:false, pinError:false, exportSent:false };
+}
+let state = estadoInicial();
 let tapCount = 0;
 let tapTimer = null;
 
@@ -260,6 +290,7 @@ function render(){
   const app = document.getElementById('app');
   if(state.screen==='welcome') app.innerHTML = renderWelcome();
   else if(state.screen==='question') app.innerHTML = renderQuestion();
+  else if(state.screen==='kpis') app.innerHTML = renderKpis();
   else if(state.screen==='loading') app.innerHTML = renderLoading();
   else if(state.screen==='result') app.innerHTML = renderResult();
   else if(state.screen==='pin') app.innerHTML = renderPin();
@@ -277,13 +308,15 @@ function renderWelcome(){
     <div class="screen" style="justify-content:center; flex:1;">
       <div class="eyebrow">Taller: De Entrenador a Coach Premium</div>
       <h1>Diagnóstico<br><span class="accent">Coach Premium</span></h1>
-      <p class="sub">9 preguntas sobre cómo operas tu negocio hoy. Al final recibes tu nivel actual, tu brecha hacia el modelo premium y el módulo del taller por donde empezar.</p>
+      <p class="sub">9 preguntas sobre cómo operas tu negocio hoy, más tus números clave. Al final recibes tu nivel actual, tu brecha hacia el modelo premium y el módulo del taller por donde empezar. Lo vuelves a responder al cerrar el taller, con el mismo correo, para ver tu progreso real.</p>
       <div class="meta-line">
         <div class="meta-item"><b>9</b>Preguntas</div>
-        <div class="meta-item"><b>~2 min</b>Duración</div>
+        <div class="meta-item"><b>~3 min</b>Duración</div>
         <div class="meta-item"><b>4</b>Pilares evaluados</div>
       </div>
       <input type="text" class="input-field" id="name-input" placeholder="Tu nombre (para tu diagnóstico)" maxlength="40" value="${escapeHtml(state.userName||'')}">
+      <input type="email" class="input-field" id="email-input" placeholder="Tu correo (el mismo que usarás al cerrar el taller)" maxlength="120" value="${escapeHtml(state.email||'')}">
+      ${state.emailError?`<div class="field-error">${escapeHtml(state.emailError)}</div>`:''}
       <button class="btn-primary" id="start-btn">Comenzar diagnóstico</button>
     </div>
     <footer class="foot"><div id="secret-tap">${wordmark()}</div></footer>
@@ -308,7 +341,30 @@ function renderQuestion(){
       </div>
       <div class="nav-row">
         <button class="btn-secondary" id="back-btn" ${state.current===0?'disabled style="opacity:0.3;cursor:not-allowed;"':''}>Atrás</button>
-        <button class="btn-primary" id="next-btn" ${selected===null?'disabled':''}>${state.current===QUESTIONS.length-1?'Ver diagnóstico':'Siguiente'}</button>
+        <button class="btn-primary" id="next-btn" ${selected===null?'disabled':''}>${state.current===QUESTIONS.length-1?'Siguiente: tus números':'Siguiente'}</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderKpis(){
+  return `
+    <header class="top">${wordmark()}</header>
+    <div class="progress-track"><div class="progress-fill" style="width:100%"></div></div>
+    <div class="screen">
+      <div class="q-pillar">TUS NÚMEROS</div>
+      <div class="q-text" style="font-size:20px;">Unos datos rápidos de tu negocio hoy</div>
+      <p class="sub" style="margin-bottom:24px; font-size:13.5px;">Esto es lo que te permite ver, al cerrar el taller, exactamente cuánto cambió.</p>
+      ${KPIS.map(k=>`
+        <label class="field-label" for="kpi-${k.key}">${k.label}</label>
+        <input type="number" inputmode="numeric" class="input-field" id="kpi-${k.key}"
+          min="${k.min}" max="${k.max}" placeholder="${k.placeholder}"
+          value="${state.kpis[k.key]??''}">
+      `).join('')}
+      ${state.kpiError?`<div class="field-error">${escapeHtml(state.kpiError)}</div>`:''}
+      <div class="nav-row">
+        <button class="btn-secondary" id="kpis-back-btn">Atrás</button>
+        <button class="btn-primary" id="kpis-next-btn">Ver diagnóstico</button>
       </div>
     </div>
   `;
@@ -321,6 +377,51 @@ function renderLoading(){
       <div class="loading-title">Analizando tus respuestas</div>
       <div class="pulse-bar"></div>
       <div class="loading-sub">Calculando tu nivel y tu plan de acción...</div>
+    </div>
+  `;
+}
+
+function formatNum(n){ return Number(n).toLocaleString('es-CL'); }
+function formatMoney(n){ return '$' + formatNum(n); }
+function formatPct(n){ return formatNum(n) + '%'; }
+
+// Una fila de "Tus números". Sin `previo` muestra sólo el valor actual
+// (primer diagnóstico); con `previo` muestra antes→ahora y el delta.
+function filaProgreso(label, actual, previo, formatear){
+  const fmt = formatear || formatNum;
+  if(previo==null){
+    return `<div class="progreso-row"><span class="progreso-label">${label}</span><span class="progreso-delta flat">${fmt(actual)}</span></div>`;
+  }
+  const diff = actual - previo;
+  const cls = diff>0?'up':diff<0?'down':'flat';
+  const signo = diff>0?'+':diff<0?'−':'';
+  // Si partía de 0 un % no dice nada ("de 0 a 3" no es "+infinito%").
+  const deltaTxt = previo===0
+    ? (diff===0?'Sin cambio':`${signo}${fmt(Math.abs(diff))}`)
+    : `${signo}${Math.abs(Math.round((diff/Math.abs(previo))*100))}%`;
+  return `
+    <div class="progreso-row">
+      <div>
+        <div class="progreso-label">${label}</div>
+        <div class="progreso-vals">${fmt(previo)} → ${fmt(actual)}</div>
+      </div>
+      <span class="progreso-delta ${cls}">${deltaTxt}</span>
+    </div>`;
+}
+
+function renderBloqueProgreso(r){
+  const k = r.kpis || {};
+  const p = r.previo;
+  const tituloBox = p ? 'Tu progreso desde el diagnóstico inicial' : 'Tus números hoy';
+  return `
+    <div class="section-label">${tituloBox}</div>
+    <div class="progreso-box">
+      ${filaProgreso('Puntaje global', r.scores.global, p?p.global:null)}
+      ${filaProgreso('Clientes activos', k.clientes, p?p.kpis?.clientes:null)}
+      ${filaProgreso('Tarifa promedio', k.tarifa, p?p.kpis?.tarifa:null, formatMoney)}
+      ${filaProgreso('Ingreso mensual', k.ingreso, p?p.kpis?.ingreso:null, formatMoney)}
+      ${filaProgreso('Horas semanales', k.horas, p?p.kpis?.horas:null)}
+      ${filaProgreso('Retención a 3 meses', k.retencion, p?p.kpis?.retencion:null, formatPct)}
     </div>
   `;
 }
@@ -354,6 +455,8 @@ function renderResult(){
         `).join('')}
       </div>
 
+      ${renderBloqueProgreso(r)}
+
       <div class="section-label">Diagnóstico</div>
       <div class="diagnostico-text">${escapeHtml(r.diagnostico)}</div>
 
@@ -372,6 +475,7 @@ function renderResult(){
         ${r.siguientes_pasos.map(p=>`<li><span class="step-text">${escapeHtml(p)}</span></li>`).join('')}
       </ul>
 
+      ${r.momento==='inicio'?`<p class="sub" style="font-size:13px; margin-bottom:18px;">Vuelve a responder este diagnóstico con el mismo correo (<b>${escapeHtml(r.email||'')}</b>) cuando cierres el taller, para ver exactamente cuánto cambiaste.</p>`:''}
       <button class="btn-secondary" id="restart-btn">Repetir diagnóstico</button>
     </div>
     <footer class="foot">${wordmark()}</footer>
@@ -413,6 +517,10 @@ function renderCoach(){
   const bottleneckCounts = {};
   entries.forEach(e=>{ bottleneckCounts[e.bottleneck]=(bottleneckCounts[e.bottleneck]||0)+1; });
   const sorted = [...entries].sort((a,b)=> new Date(b.fecha) - new Date(a.fecha));
+  const pares = paresPorEmail(entries);
+  const avgDeltaGlobal = pares.length
+    ? Math.round(pares.reduce((s,p)=>s+(p.cierre.global-p.inicio.global),0)/pares.length)
+    : null;
 
   return `
     <header class="top">${wordmark()}<button class="btn-secondary coach-exit" id="coach-back">Salir</button></header>
@@ -422,7 +530,27 @@ function renderCoach(){
       <div class="meta-line">
         <div class="meta-item"><b>${total}</b>Completados</div>
         <div class="meta-item"><b>${avgGlobal}</b>Promedio global</div>
+        ${pares.length>0?`<div class="meta-item"><b>${pares.length}</b>Con inicio y cierre</div>`:''}
       </div>
+
+      ${pares.length>0?`
+      <div class="section-label">Progreso pareado (inicio → cierre)</div>
+      <div class="meta-line" style="margin-bottom:22px;">
+        <div class="meta-item"><b>${avgDeltaGlobal>=0?'+':''}${avgDeltaGlobal}</b>Mejora promedio en puntaje</div>
+      </div>
+      <ul class="coach-list" style="margin-bottom:32px;">
+        ${pares.map(p=>{
+          const delta = p.cierre.global - p.inicio.global;
+          const ti = p.inicio.kpis?.tarifa, tc = p.cierre.kpis?.tarifa;
+          return `
+          <li class="coach-entry">
+            <div class="coach-row"><span class="coach-name">${escapeHtml(p.cierre.nombre)}</span><span class="coach-delta">${delta>=0?'+':''}${delta} pts</span></div>
+            <div class="coach-meta">Global: ${p.inicio.global} → ${p.cierre.global}${(ti!=null&&tc!=null)?` · Tarifa: ${formatMoney(ti)} → ${formatMoney(tc)}`:''}</div>
+          </li>`;
+        }).join('')}
+      </ul>
+      <button class="btn-secondary" id="export-progreso-btn" style="margin-bottom:32px;">Descargar CSV de progreso pareado</button>
+      `:''}
 
       <div class="section-label">Distribución por nivel</div>
       <div class="pillars">
@@ -449,7 +577,7 @@ function renderCoach(){
       <ul class="coach-list">
         ${sorted.slice(0,25).map(e=>`
           <li class="coach-entry">
-            <div class="coach-row"><span class="coach-name">${escapeHtml(e.nombre)}</span><span class="coach-score">${Number(e.global)||0}</span></div>
+            <div class="coach-row"><span class="coach-name">${escapeHtml(e.nombre)}${e.momento?` <span style="color:var(--gray); font-weight:400;">· ${e.momento}</span>`:''}</span><span class="coach-score">${Number(e.global)||0}</span></div>
             <div class="coach-meta">${escapeHtml(e.nivel)} · ${new Date(e.fecha).toLocaleDateString('es-ES')} · ${escapeHtml(e.bottleneck)}</div>
           </li>
         `).join('')}
@@ -466,7 +594,18 @@ function attachHandlers(){
   const startBtn = document.getElementById('start-btn');
   if(startBtn) startBtn.onclick = ()=>{
     const nameInput = document.getElementById('name-input');
+    const emailInput = document.getElementById('email-input');
+    const email = (emailInput && emailInput.value.trim()) || '';
+    if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){
+      state.userName = (nameInput && nameInput.value.trim()) || '';
+      state.email = email;
+      state.emailError = 'Ingresa un correo válido — es lo que permite comparar tu diagnóstico de cierre con este.';
+      render();
+      return;
+    }
     state.userName = (nameInput && nameInput.value.trim()) ? nameInput.value.trim() : 'Anónimo';
+    state.email = email;
+    state.emailError = false;
     state.screen='question'; state.current=0; render();
   };
 
@@ -478,6 +617,9 @@ function attachHandlers(){
 
   const exportBtn = document.getElementById('export-drive-btn');
   if(exportBtn) exportBtn.onclick = exportToDrive;
+
+  const exportProgresoBtn = document.getElementById('export-progreso-btn');
+  if(exportProgresoBtn) exportProgresoBtn.onclick = exportProgreso;
 
   const pinSubmit = document.getElementById('pin-submit');
   if(pinSubmit) pinSubmit.onclick = checkPin;
@@ -509,20 +651,44 @@ function attachHandlers(){
       state.current++;
       render();
     } else {
-      state.screen='loading';
+      state.screen='kpis';
       render();
-      runDiagnostico();
     }
+  };
+
+  const kpisBackBtn = document.getElementById('kpis-back-btn');
+  if(kpisBackBtn) kpisBackBtn.onclick = ()=>{ state.screen='question'; render(); };
+
+  const kpisNextBtn = document.getElementById('kpis-next-btn');
+  if(kpisNextBtn) kpisNextBtn.onclick = ()=>{
+    // Se guarda tal cual se escribió (string), aunque falte alguno, para
+    // que un error en un campo no borre lo que ya se tipeó en los demás.
+    const valores = {};
+    for(const k of KPIS){
+      const input = document.getElementById('kpi-'+k.key);
+      valores[k.key] = input ? input.value.trim() : '';
+    }
+    state.kpis = valores;
+
+    for(const k of KPIS){
+      const n = Number(valores[k.key]);
+      if(valores[k.key]===''||!Number.isFinite(n)||n<k.min||n>k.max){
+        state.kpiError = `Completa "${k.label}" con un número entre ${k.min} y ${k.max}.`;
+        render();
+        return;
+      }
+    }
+    state.kpiError = false;
+    state.screen = 'loading';
+    render();
+    runDiagnostico();
   };
 
   const retryBtn = document.getElementById('retry-btn');
   if(retryBtn) retryBtn.onclick = ()=>{ state.error=null; state.screen='loading'; render(); runDiagnostico(); };
 
   const restartBtn = document.getElementById('restart-btn');
-  if(restartBtn) restartBtn.onclick = ()=>{
-    state = { screen:'welcome', current:0, answers:new Array(QUESTIONS.length).fill(null), result:null, error:null, userName:'', coachData:null, coachLoading:false };
-    render();
-  };
+  if(restartBtn) restartBtn.onclick = ()=>{ state = estadoInicial(); render(); };
 }
 
 function handleSecretTap(){
@@ -554,12 +720,44 @@ function csvEscape(val){
   return s;
 }
 
+function descargarCsv(nombreArchivo, header, rows){
+  const csv = [header, ...rows].map(r=>r.map(csvEscape).join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = nombreArchivo;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// Agrupa por correo y junta, por persona, el primer "inicio" con el último
+// "cierre". Entradas viejas (de antes de este cambio) no tienen email ni
+// momento, así que simplemente no entran en ningún par.
+function paresPorEmail(entries){
+  const porEmail = {};
+  entries.forEach(e=>{
+    if(!e.email) return;
+    (porEmail[e.email] ||= []).push(e);
+  });
+  return Object.values(porEmail).map(lista=>{
+    const inicios = lista.filter(e=>e.momento==='inicio').sort((a,b)=>new Date(a.fecha)-new Date(b.fecha));
+    const cierres = lista.filter(e=>e.momento==='cierre').sort((a,b)=>new Date(b.fecha)-new Date(a.fecha));
+    if(!inicios.length || !cierres.length) return null;
+    return { inicio: inicios[0], cierre: cierres[0] };
+  }).filter(Boolean);
+}
+
 function exportToDrive(){
   const entries = state.coachData || [];
   const sorted = [...entries].sort((a,b)=> a.global - b.global);
-  const header = ['Nombre','Fecha','Nivel','Puntaje Global','Fundamentos','Marca Personal','Oferta y Precios','Ventas y Retencion','Cuello de Botella','Recomendacion de Seguimiento'];
+  const header = ['Nombre','Correo','Momento','Fecha','Nivel','Puntaje Global','Fundamentos','Marca Personal','Oferta y Precios','Ventas y Retencion','Cuello de Botella','Recomendacion de Seguimiento','Clientes Activos','Tarifa Promedio','Ingreso Mensual','Horas Semanales','Retencion 3 Meses %'];
   const rows = sorted.map(e=>[
     e.nombre,
+    e.email || '',
+    e.momento || '',
     new Date(e.fecha).toLocaleDateString('es-ES'),
     e.nivel,
     e.global,
@@ -568,22 +766,30 @@ function exportToDrive(){
     e.oferta,
     e.ventas,
     e.bottleneck,
-    recomendacionPara(e.global)
+    recomendacionPara(e.global),
+    e.kpis?.clientes ?? '',
+    e.kpis?.tarifa ?? '',
+    e.kpis?.ingreso ?? '',
+    e.kpis?.horas ?? '',
+    e.kpis?.retencion ?? '',
   ]);
-  const csv = [header, ...rows].map(r=>r.map(csvEscape).join(',')).join('\n');
-
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `JCOTRAINER-diagnosticos-${new Date().toISOString().slice(0,10)}.csv`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-
+  descargarCsv(`JCOTRAINER-diagnosticos-${new Date().toISOString().slice(0,10)}.csv`, header, rows);
   state.exportSent = true;
   render();
+}
+
+function exportProgreso(){
+  const pares = paresPorEmail(state.coachData || []);
+  const header = ['Nombre','Correo','Puntaje Inicio','Puntaje Cierre','Delta Puntaje','Tarifa Inicio','Tarifa Cierre','Ingreso Inicio','Ingreso Cierre','Clientes Inicio','Clientes Cierre','Retencion Inicio %','Retencion Cierre %'];
+  const rows = pares.map(({inicio:i, cierre:c})=>[
+    c.nombre, c.email,
+    i.global, c.global, c.global - i.global,
+    i.kpis?.tarifa ?? '', c.kpis?.tarifa ?? '',
+    i.kpis?.ingreso ?? '', c.kpis?.ingreso ?? '',
+    i.kpis?.clientes ?? '', c.kpis?.clientes ?? '',
+    i.kpis?.retencion ?? '', c.kpis?.retencion ?? '',
+  ]);
+  descargarCsv(`JCOTRAINER-progreso-${new Date().toISOString().slice(0,10)}.csv`, header, rows);
 }
 
 async function checkPin(){
@@ -615,13 +821,26 @@ async function checkPin(){
   render();
 }
 
-async function saveToRegistry(scores, bottleneck){
+// Convierte lo tipeado en la pantalla de KPIs (strings) a números, una sola
+// vez, justo antes de mandarlo — así el formulario puede seguir guardando
+// texto libre mientras el usuario escribe.
+function kpisComoNumeros(){
+  const n = {};
+  for(const k of KPIS) n[k.key] = Number(state.kpis[k.key]);
+  return n;
+}
+
+// Devuelve { momento, previo } si el guardado funcionó, o null si falló —
+// nunca lanza: perder el registro no debería tumbar la pantalla de
+// resultado, que ya se calculó aparte.
+async function saveToRegistry(scores, bottleneck, kpis){
   try{
-    await fetch('/api/registro', {
+    const res = await fetch('/api/registro', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         nombre: state.userName || 'Anónimo',
+        email: state.email,
         nivel: scores.nivel,
         global: scores.global,
         fundamentos: scores.fundamentos,
@@ -629,11 +848,14 @@ async function saveToRegistry(scores, bottleneck){
         oferta: scores.oferta,
         ventas: scores.ventas,
         bottleneck: bottleneck,
-        fecha: new Date().toISOString()
+        kpis,
       })
     });
+    if(!res.ok) return null;
+    return await res.json();
   }catch(e){
     console.error('No se pudo guardar el registro:', e);
+    return null;
   }
 }
 
@@ -655,12 +877,13 @@ function computeScores(){
 async function runDiagnostico(){
   const scores = computeScores();
   const bottleneck = state.answers[8];
+  const kpis = kpisComoNumeros();
 
   try{
     const response = await fetch('/api/diagnostico', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ scores, bottleneck })
+      body: JSON.stringify({ scores, bottleneck, kpis })
     });
 
     if(response.status === 429){
@@ -678,11 +901,14 @@ async function runDiagnostico(){
       throw new Error(parsed.error);
     }
 
-    state.result = { scores, ...parsed };
+    // Se espera el registro antes de pintar: así, si es el diagnóstico de
+    // cierre, la pantalla de resultado ya sale con el progreso calculado.
+    const registro = await saveToRegistry(scores, bottleneck, kpis);
+
+    state.result = { scores, ...parsed, kpis, email: state.email, momento: registro?.momento || 'inicio', previo: registro?.previo || null };
     state.error = null;
     state.screen = 'result';
     render();
-    saveToRegistry(scores, bottleneck);
   }catch(err){
     console.error("Diagnóstico error:", err);
     state.error = "Intenta de nuevo en unos segundos.";
